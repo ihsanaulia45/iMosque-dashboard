@@ -1,56 +1,45 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../app/supabase'
 import { useAuthStore, selectIsDeveloper } from '../stores/auth.store'
+import { MosqueWizard } from '../components/mosque/MosqueWizard'
 
 interface Mosque {
   id: string
   name: string
+  description: string | null
   address: string | null
   city: string | null
   province: string | null
-  latitude: number | null
-  longitude: number | null
-  phone: string | null
-  description: string | null
+  postal_code: string | null
+  latitude: number
+  longitude: number
+  image_url: string | null
   is_verified: boolean
-  is_active: boolean
-  created_by: string | null
   created_at: string
   updated_at: string
-}
-
-const EMPTY_FORM: Partial<Mosque> = {
-  name: '',
-  address: '',
-  city: '',
-  province: '',
-  phone: '',
-  description: '',
-  latitude: null,
-  longitude: null,
 }
 
 const PAGE_SIZE = 15
 
 export default function Mosques() {
   const isDeveloper = useAuthStore(selectIsDeveloper)
-  const { profile } = useAuthStore()
 
   const [mosques, setMosques] = useState<Mosque[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(0)
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState<'all' | 'verified' | 'pending' | 'inactive'>('all')
+  const [filter, setFilter] = useState<'all' | 'verified' | 'pending'>('all')
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
   // Modals
   const [selected, setSelected] = useState<Mosque | null>(null)
-  const [showForm, setShowForm] = useState(false)
+  const [showWizard, setShowWizard] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
   const [editTarget, setEditTarget] = useState<Mosque | null>(null)
-  const [form, setForm] = useState<Partial<Mosque>>(EMPTY_FORM)
-  const [formError, setFormError] = useState('')
-  const [formSaving, setFormSaving] = useState(false)
+  const [editForm, setEditForm] = useState({ name: '', address: '', city: '', province: '', postal_code: '', latitude: '', longitude: '', description: '' })
+  const [editError, setEditError] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
 
   const fetchMosques = useCallback(async () => {
     setLoading(true)
@@ -65,7 +54,6 @@ export default function Mosques() {
     }
     if (filter === 'verified') query = query.eq('is_verified', true)
     if (filter === 'pending') query = query.eq('is_verified', false)
-    if (filter === 'inactive') query = query.eq('is_active', false)
 
     const { data, count, error } = await query
     if (!error) {
@@ -82,23 +70,9 @@ export default function Mosques() {
 
   const handleVerify = async (mosque: Mosque, verified: boolean) => {
     setActionLoading(mosque.id)
-    await supabase
-      .from('mosques')
-      .update({ is_verified: verified, updated_at: new Date().toISOString() })
-      .eq('id', mosque.id)
+    await supabase.from('mosques').update({ is_verified: verified }).eq('id', mosque.id)
     await fetchMosques()
     if (selected?.id === mosque.id) setSelected({ ...mosque, is_verified: verified })
-    setActionLoading(null)
-  }
-
-  const handleActivate = async (mosque: Mosque, active: boolean) => {
-    setActionLoading(mosque.id)
-    await supabase
-      .from('mosques')
-      .update({ is_active: active, updated_at: new Date().toISOString() })
-      .eq('id', mosque.id)
-    await fetchMosques()
-    if (selected?.id === mosque.id) setSelected({ ...mosque, is_active: active })
     setActionLoading(null)
   }
 
@@ -111,68 +85,56 @@ export default function Mosques() {
     setActionLoading(null)
   }
 
-  const openAdd = () => {
-    setEditTarget(null)
-    setForm(EMPTY_FORM)
-    setFormError('')
-    setShowForm(true)
-  }
-
   const openEdit = (m: Mosque) => {
     setEditTarget(m)
-    setForm({
+    setEditForm({
       name: m.name,
       address: m.address ?? '',
       city: m.city ?? '',
       province: m.province ?? '',
-      phone: m.phone ?? '',
+      postal_code: m.postal_code ?? '',
+      latitude: String(m.latitude),
+      longitude: String(m.longitude),
       description: m.description ?? '',
-      latitude: m.latitude,
-      longitude: m.longitude,
     })
-    setFormError('')
-    setShowForm(true)
+    setEditError('')
+    setShowEdit(true)
+    setSelected(null)
   }
 
-  const handleFormSave = async () => {
-    if (!form.name?.trim()) {
-      setFormError('Name is required')
+  const handleEditSave = async () => {
+    if (!editTarget || !editForm.name.trim()) {
+      setEditError('Name is required')
       return
     }
-    setFormSaving(true)
-    setFormError('')
-
-    const payload = {
-      name: form.name!.trim(),
-      address: form.address?.trim() || null,
-      city: form.city?.trim() || null,
-      province: form.province?.trim() || null,
-      phone: form.phone?.trim() || null,
-      description: form.description?.trim() || null,
-      latitude: form.latitude ?? null,
-      longitude: form.longitude ?? null,
-      updated_at: new Date().toISOString(),
+    const lat = parseFloat(editForm.latitude)
+    const lng = parseFloat(editForm.longitude)
+    if (isNaN(lat) || isNaN(lng)) {
+      setEditError('Latitude and Longitude must be valid numbers')
+      return
     }
 
-    let error
-    if (editTarget) {
-      ({ error } = await supabase.from('mosques').update(payload).eq('id', editTarget.id))
-    } else {
-      ({ error } = await supabase.from('mosques').insert({
-        ...payload,
-        is_verified: false,
-        is_active: true,
-        created_by: profile?.id ?? null,
-      }))
-    }
+    setEditSaving(true)
+    setEditError('')
+
+    const { error } = await supabase.from('mosques').update({
+      name: editForm.name.trim(),
+      address: editForm.address.trim() || null,
+      city: editForm.city.trim() || null,
+      province: editForm.province.trim() || null,
+      postal_code: editForm.postal_code.trim() || null,
+      latitude: lat,
+      longitude: lng,
+      description: editForm.description.trim() || null,
+    }).eq('id', editTarget.id)
 
     if (error) {
-      setFormError(error.message)
+      setEditError(error.message)
     } else {
-      setShowForm(false)
+      setShowEdit(false)
       await fetchMosques()
     }
-    setFormSaving(false)
+    setEditSaving(false)
   }
 
   return (
@@ -180,7 +142,7 @@ export default function Mosques() {
       <div className="flex items-center justify-between mb-1">
         <h1 className="text-2xl font-semibold text-gray-800">Mosques</h1>
         <button
-          onClick={openAdd}
+          onClick={() => setShowWizard(true)}
           className="px-4 py-2 bg-green-700 hover:bg-green-800 text-white text-sm rounded-lg font-medium"
         >
           + Add Mosque
@@ -205,29 +167,27 @@ export default function Mosques() {
           <option value="all">All</option>
           <option value="verified">Verified</option>
           <option value="pending">Pending</option>
-          <option value="inactive">Inactive</option>
         </select>
         <span className="text-sm text-gray-500 self-center ml-auto">{total} mosques</span>
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+        <table className="min-w-[700px] w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">City</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Active</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Created</th>
               <th className="text-right px-4 py-3 font-medium text-gray-600">Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} className="text-center py-8 text-gray-400">Loading...</td></tr>
+              <tr><td colSpan={5} className="text-center py-8 text-gray-400">Loading...</td></tr>
             ) : mosques.length === 0 ? (
-              <tr><td colSpan={6} className="text-center py-8 text-gray-400">No mosques found.</td></tr>
+              <tr><td colSpan={5} className="text-center py-8 text-gray-400">No mosques found.</td></tr>
             ) : (
               mosques.map((m) => (
                 <tr key={m.id} className="border-b border-gray-100 hover:bg-gray-50">
@@ -243,13 +203,6 @@ export default function Mosques() {
                       m.is_verified ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
                     }`}>
                       {m.is_verified ? 'Verified' : 'Pending'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-block px-2 py-0.5 text-xs rounded-full font-medium ${
-                      m.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                    }`}>
-                      {m.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-gray-500">{new Date(m.created_at).toLocaleDateString()}</td>
@@ -285,7 +238,7 @@ export default function Mosques() {
       )}
 
       {/* Detail Modal */}
-      {selected && !showForm && (
+      {selected && !showEdit && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setSelected(null)}>
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl mx-4 p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-6">
@@ -310,16 +263,12 @@ export default function Mosques() {
                   <p className="text-gray-700">{selected.province || '-'}</p>
                 </div>
                 <div>
-                  <p className="text-gray-500 mb-1">Phone</p>
-                  <p className="text-gray-700">{selected.phone || '-'}</p>
+                  <p className="text-gray-500 mb-1">Postal Code</p>
+                  <p className="text-gray-700">{selected.postal_code || '-'}</p>
                 </div>
                 <div>
                   <p className="text-gray-500 mb-1">Coordinates</p>
-                  <p className="text-gray-700">
-                    {selected.latitude && selected.longitude
-                      ? `${selected.latitude}, ${selected.longitude}`
-                      : '-'}
-                  </p>
+                  <p className="text-gray-700">{selected.latitude}, {selected.longitude}</p>
                 </div>
                 <div>
                   <p className="text-gray-500 mb-1">Created</p>
@@ -331,14 +280,6 @@ export default function Mosques() {
                     selected.is_verified ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
                   }`}>
                     {selected.is_verified ? 'Verified' : 'Pending'}
-                  </span>
-                </div>
-                <div>
-                  <p className="text-gray-500 mb-1">Active</p>
-                  <span className={`inline-block px-2 py-0.5 text-xs rounded-full font-medium ${
-                    selected.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                  }`}>
-                    {selected.is_active ? 'Active' : 'Inactive'}
                   </span>
                 </div>
               </div>
@@ -361,16 +302,7 @@ export default function Mosques() {
                   {selected.is_verified ? 'Unverify' : 'Verify'}
                 </button>
                 <button
-                  onClick={() => handleActivate(selected, !selected.is_active)}
-                  disabled={actionLoading === selected.id}
-                  className={`px-4 py-2 text-sm rounded-lg font-medium text-white ${
-                    selected.is_active ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-700'
-                  } disabled:opacity-50`}
-                >
-                  {selected.is_active ? 'Deactivate' : 'Activate'}
-                </button>
-                <button
-                  onClick={() => { setSelected(null); openEdit(selected) }}
+                  onClick={() => openEdit(selected)}
                   className="px-4 py-2 text-sm rounded-lg font-medium border border-gray-300 hover:bg-gray-50"
                 >
                   Edit
@@ -390,80 +322,88 @@ export default function Mosques() {
         </div>
       )}
 
-      {/* Add / Edit Form Modal */}
-      {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setShowForm(false)}>
+      {/* Edit Modal (single form, no wizard) */}
+      {showEdit && editTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setShowEdit(false)}>
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-gray-800">{editTarget ? 'Edit Mosque' : 'Add Mosque'}</h2>
-              <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+              <h2 className="text-lg font-semibold text-gray-800">Edit Mosque</h2>
+              <button onClick={() => setShowEdit(false)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
             </div>
 
-            {formError && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{formError}</div>
+            {editError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{editError}</div>
             )}
 
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-                <input type="text" value={form.name ?? ''} onChange={(e) => setForm({ ...form, name: e.target.value })}
+                <input type="text" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-600 focus:border-transparent outline-none" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
-                <input type="text" value={form.address ?? ''} onChange={(e) => setForm({ ...form, address: e.target.value })}
+                <input type="text" value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-600 focus:border-transparent outline-none" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
-                  <input type="text" value={form.city ?? ''} onChange={(e) => setForm({ ...form, city: e.target.value })}
+                  <input type="text" value={editForm.city} onChange={(e) => setEditForm({ ...editForm, city: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-600 focus:border-transparent outline-none" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Province</label>
-                  <input type="text" value={form.province ?? ''} onChange={(e) => setForm({ ...form, province: e.target.value })}
+                  <input type="text" value={editForm.province} onChange={(e) => setEditForm({ ...editForm, province: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-600 focus:border-transparent outline-none" />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                <input type="text" value={form.phone ?? ''} onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                <label className="block text-sm font-medium text-gray-700 mb-1">Postal Code</label>
+                <input type="text" value={editForm.postal_code} onChange={(e) => setEditForm({ ...editForm, postal_code: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-600 focus:border-transparent outline-none" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Latitude</label>
-                  <input type="number" step="any" value={form.latitude ?? ''} onChange={(e) => setForm({ ...form, latitude: e.target.value ? parseFloat(e.target.value) : null })}
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Latitude *</label>
+                  <input type="text" inputMode="decimal" value={editForm.latitude} onChange={(e) => setEditForm({ ...editForm, latitude: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-600 focus:border-transparent outline-none" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Longitude</label>
-                  <input type="number" step="any" value={form.longitude ?? ''} onChange={(e) => setForm({ ...form, longitude: e.target.value ? parseFloat(e.target.value) : null })}
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Longitude *</label>
+                  <input type="text" inputMode="decimal" value={editForm.longitude} onChange={(e) => setEditForm({ ...editForm, longitude: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-600 focus:border-transparent outline-none" />
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <textarea rows={3} value={form.description ?? ''} onChange={(e) => setForm({ ...form, description: e.target.value })}
+                <textarea rows={3} value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-600 focus:border-transparent outline-none resize-none" />
               </div>
 
               <div className="flex gap-3 pt-2">
                 <button
-                  onClick={handleFormSave}
-                  disabled={formSaving}
+                  onClick={handleEditSave}
+                  disabled={editSaving}
                   className="px-4 py-2 bg-green-700 hover:bg-green-800 disabled:bg-green-400 text-white text-sm rounded-lg font-medium"
                 >
-                  {formSaving ? 'Saving...' : editTarget ? 'Update' : 'Create'}
+                  {editSaving ? 'Saving...' : 'Update'}
                 </button>
-                <button onClick={() => setShowForm(false)} className="px-4 py-2 border border-gray-300 text-sm rounded-lg hover:bg-gray-50">
+                <button onClick={() => setShowEdit(false)} className="px-4 py-2 border border-gray-300 text-sm rounded-lg hover:bg-gray-50">
                   Cancel
                 </button>
               </div>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Add Mosque Wizard */}
+      {showWizard && (
+        <MosqueWizard
+          onClose={() => setShowWizard(false)}
+          onComplete={() => { setShowWizard(false); fetchMosques() }}
+        />
       )}
     </div>
   )

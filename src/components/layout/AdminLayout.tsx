@@ -1,4 +1,5 @@
-import { NavLink, Link, Outlet, useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { NavLink, Link, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../stores/auth.store'
 
 const navItems = [
@@ -12,6 +13,13 @@ const navItems = [
 export function AdminLayout() {
   const { profile, signOut } = useAuthStore()
   const navigate = useNavigate()
+  const location = useLocation()
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  // Close sidebar on route change (mobile)
+  useEffect(() => {
+    setSidebarOpen(false)
+  }, [location.pathname])
 
   const handleSignOut = async () => {
     await signOut()
@@ -19,13 +27,34 @@ export function AdminLayout() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-gray-50 overflow-hidden">
+      {/* Backdrop (mobile only) */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 z-30 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="w-56 bg-green-800 text-white flex flex-col shrink-0">
-        <div className="p-5 border-b border-green-700">
+      <aside
+        className={`
+          fixed inset-y-0 left-0 z-40 w-64 bg-green-800 text-white flex flex-col
+          transform transition-transform duration-300 ease-in-out
+          lg:relative lg:translate-x-0 lg:shrink-0
+          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+        `}
+      >
+        <div className="p-5 border-b border-green-700 flex items-center justify-between">
           <h1 className="text-lg font-bold tracking-wide">iMosque Admin</h1>
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="lg:hidden text-green-300 hover:text-white text-xl"
+          >
+            &times;
+          </button>
         </div>
-        <nav className="flex-1 py-4">
+        <nav className="flex-1 py-4 overflow-y-auto">
           {navItems.map((item) => (
             <NavLink
               key={item.to}
@@ -46,12 +75,23 @@ export function AdminLayout() {
         </nav>
       </aside>
 
-      {/* Main */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-end px-6 shrink-0">
-          <div className="flex items-center gap-3">
-            <Link to="/profile" className="text-right hover:opacity-80 transition">
+      {/* Main content area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Header / Navbar */}
+        <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4 sm:px-6 shrink-0">
+          {/* Left: Hamburger (mobile only) */}
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="lg:hidden p-2 -ml-2 text-gray-600 hover:text-gray-800"
+          >
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+
+          {/* Right: User info + logout */}
+          <div className="flex items-center gap-3 ml-auto">
+            <Link to="/profile" className="text-right hover:opacity-80 transition hidden sm:block">
               <p className="text-sm font-medium text-gray-800">
                 {profile?.full_name || 'Admin'}
               </p>
@@ -69,8 +109,8 @@ export function AdminLayout() {
           </div>
         </header>
 
-        {/* Content */}
-        <main className="flex-1 overflow-auto p-6">
+        {/* Page content */}
+        <main className="flex-1 overflow-auto p-4 sm:p-6">
           <Outlet />
         </main>
       </div>
